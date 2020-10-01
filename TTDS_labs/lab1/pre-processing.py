@@ -77,7 +77,7 @@ def join_line(line):
     return joined_line
 
 def write_stemmed_lines(lines, output_file_name):
-    with open('./' + output_file_name, 'a') as f:
+    with open('./' + output_file_name, 'w') as f:
         for line in lines:
             f.write(join_line(line))
     
