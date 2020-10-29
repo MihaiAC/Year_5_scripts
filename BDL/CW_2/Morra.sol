@@ -20,7 +20,7 @@ contract mc_morra {
     uint8 nr_revealed_players;
     
     address owner;
-    uint constant grace_period = 100;
+    uint constant grace_period = 25;
     
     constructor() public {
         owner = msg.sender;
@@ -126,6 +126,35 @@ contract mc_morra {
         require (player_balance != 0, "Your balance is 0.");
         players_balances[msg.sender] = 0;
         msg.sender.transfer(player_balance);
+    }
+    
+    //Taken from: https://solidity.readthedocs.io/en/v0.4.24/contracts.html.
+    function max(uint256 a, uint256 b) private pure returns(uint256) {
+        return a > b ? a : b;
+    }
+    
+    function forcefully_end_game() external only_owner {
+        require(nr_committed_players == 2, "Cannot end game if there are less than 2 committed players.");
+        if(nr_revealed_players < 2) {
+            uint256 max_commit_block = max(players[player_1].commit_block, players[player_2].commit_block);
+            require(block.number > grace_period + max_commit_block, "Cannot end game until the grace period has passed.");
+            if(players[player_1].revealed == false) {
+                players_balances[player_2] += 5 * 1e18;
+            }
+            else {
+                players_balances[player_1] += 5 * 1e18;
+            }
+        }
+        else {
+            uint256 max_reveal_block = max(players[player_1].reveal_block, players[player_2].reveal_block);
+            require(block.number > grace_period + max_reveal_block, "Cannot end game until the grace period has passed.");
+        }
+        delete players[player_1];
+        delete players[player_2];
+        delete player_1;
+        delete player_2;
+        delete nr_committed_players;
+        delete nr_revealed_players;
     }
     
     function withdraw_contract_balance() external only_owner {
