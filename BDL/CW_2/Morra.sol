@@ -4,8 +4,7 @@ contract mc_morra {
     struct Player {
         bytes32 commit;
         bool revealed;
-        uint8 guess;
-        uint8 played_number;
+        uint256 played_nr_and_guess;
     }
     
     mapping (address => uint256) players_balances;
@@ -20,6 +19,8 @@ contract mc_morra {
     
     constructor() public {
         owner = msg.sender;
+        last_commit_block = 1;
+        last_reveal_block = 1;
     }
     
     modifier only_owner() {
@@ -65,16 +66,15 @@ contract mc_morra {
         delete last_commit_block;
     }
     
-    function reveal(uint8 guess, uint8 played_number, uint8 safety_number) external {
+    function reveal(uint256 played_nr_and_guess, uint256 safety_number) external {
         require (msg.sender == player_1 || msg.sender == player_2, "Message sender is not a player.");
         require (players[player_1].commit != 0 && players[player_2].commit != 0, "Fewer than two committed players.");
         require (players[msg.sender].revealed == false, "You have already revealed.");
         require (uint256(block.number) > last_commit_block, "Revealed too soon!");
         require (uint256(block.number) <= last_commit_block + grace_period, "Revealed too late!");
-        require (compute_hash(msg.sender, guess, played_number, safety_number)==players[msg.sender].commit, "Reveal hash does not match commit.");
+        require (compute_hash(msg.sender, played_nr_and_guess, safety_number)==players[msg.sender].commit, "Reveal hash does not match commit.");
         
-        players[msg.sender].guess = guess;
-        players[msg.sender].played_number = played_number;
+        players[msg.sender].played_nr_and_guess = played_nr_and_guess;
         players[msg.sender].revealed = true;
         
         last_reveal_block = block.number;
@@ -85,19 +85,29 @@ contract mc_morra {
         require(msg.sender == player_1 || msg.sender == player_2, "Message sender is not a player.");
         require(players[player_1].revealed && players[player_2].revealed, "Players have not revealed yet.");
         
-        bool valid_1 = players[player_1].played_number > 0 && players[player_1].played_number <= 5;
-        bool valid_2 = players[player_2].played_number > 0 && players[player_2].played_number <= 5;
+        uint pl1_nr = players[player_1].played_nr_and_guess;
+        uint pl2_nr = players[player_2].played_nr_and_guess;
+        uint player_1_number = (pl1_nr / 2 ** 3) % 2 ** 3;
+        uint player_1_guess = pl1_nr % 2 ** 3;
+        uint player_2_number = (pl2_nr / 2 ** 3) % 2 ** 3;
+        uint player_2_guess = pl2_nr % 2 ** 3;
+        bool valid_1 = player_1_number > 0 && player_1_number <= 5;
+        bool valid_2 = player_2_number > 0 && player_2_number <= 5;
         
         if (valid_1 && valid_2) {
-            bool guess_1 = players[player_1].guess == players[player_2].played_number;
-            bool guess_2 = players[player_2].guess == players[player_1].played_number;
+            bool guess_1 = player_1_guess == player_2_number;
+            bool guess_2 = player_2_guess == player_1_number;
             if (guess_1 && !guess_2) {
-                players_balances[player_1] += 6 * 1e18 + players[player_2].played_number * 1e18;
-                players_balances[player_2] += 6 * 1e18 - players[player_2].played_number * 1e18;
+                players_balances[player_1] += 6 * 1e18 + player_2_number * 1e18;
+                players_balances[player_2] += 6 * 1e18 - player_2_number * 1e18;
             }
             else if (!guess_1 && guess_2) {
-                players_balances[player_1] += 6 * 1e18 - players[player_1].played_number * 1e18;
-                players_balances[player_2] += 6 * 1e18 + players[player_1].played_number * 1e18;
+                players_balances[player_1] += 6 * 1e18 - player_1_number * 1e18;
+                players_balances[player_2] += 6 * 1e18 + player_1_number * 1e18;
+            }
+            else {
+                players_balances[player_1] += 6 * 1e18;
+                players_balances[player_2] += 6 * 1e18;
             }
         }
         else if (valid_1) {
@@ -121,8 +131,8 @@ contract mc_morra {
         msg.sender.transfer(player_balance);
     }
     
-    function compute_hash(address player, uint8 guess, uint8 played_number, uint8 safety_number) public pure returns(bytes32) {
-        return keccak256(abi.encodePacked(player, guess, played_number, safety_number));
+    function compute_hash(address player, uint256 played_nr_and_guess, uint256 safety_number) public pure returns(bytes32) {
+        return keccak256(abi.encodePacked(player, played_nr_and_guess, safety_number));
     }
     
     //Owner-only function.
