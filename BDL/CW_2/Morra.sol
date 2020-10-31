@@ -15,7 +15,7 @@ contract mc_morra {
     address player_2;
     
     address owner;
-    uint constant grace_period = 25;
+    uint constant grace_period = 30;
     
     constructor() public {
         owner = msg.sender;
@@ -62,7 +62,8 @@ contract mc_morra {
         }
         
         delete players[msg.sender];
-        players_balances[msg.sender] = 5 * 1e18;
+        players_balances[msg.sender] += 5 * 1e18;
+        players_balances[owner] += 1 * 1e18;
     }
     
     function reveal(uint256 played_nr_and_guess, uint256 safety_number) external {
@@ -110,25 +111,40 @@ contract mc_morra {
                 players_balances[player_1] += 6 * 1e18;
                 players_balances[player_2] += 6 * 1e18;
             }
-            uint256 gas_consumed = gas_beginning - 40000 - gasleft();
-            if(is_player1) {
-                players_balances[player_1] += gas_consumed / 2;
-                players_balances[player_2] -= gas_consumed / 2;
-            }
-            else {
-                players_balances[player_1] -= gas_consumed / 2;
-                players_balances[player_2] += gas_consumed / 2;
+            uint256 gas_consumed = (gas_beginning - 40000 - gasleft()) * tx.gasprice;
+            if(gas_consumed < 1e18) {
+                if(is_player1) {
+                    players_balances[player_1] += gas_consumed / 2;
+                    players_balances[player_2] -= gas_consumed / 2;
+                }
+                else {
+                    players_balances[player_1] -= gas_consumed / 2;
+                    players_balances[player_2] += gas_consumed / 2;
+                }
             }
         }
         else if (valid_1) {
-            uint256 gas_consumed = gas_beginning - 40000 - gasleft();
-            players_balances[player_1] += 5 * 1e18 + gas_consumed;
-            players_balances[owner] += 1 * 1e18 - gas_consumed;
+            uint256 gas_consumed = (gas_beginning - 40000 - gasleft()) * tx.gasprice;
+            if(gas_consumed < 1e18) {
+                players_balances[player_1] += 5 * 1e18 + gas_consumed;
+                players_balances[owner] += 1 * 1e18 - gas_consumed;
+            }
+            else {
+                players_balances[player_1] += 5 * 1e18;
+                players_balances[owner] += 1 * 1e18;
+            }
+            
         }
         else if (valid_2) {
-            uint256 gas_consumed = gas_beginning - 40000 - gasleft();
-            players_balances[player_2] += 5 * 1e18 + gas_consumed;
-            players_balances[owner] += 1 * 1e18 - gas_consumed;
+            uint256 gas_consumed = (gas_beginning - 40000 - gasleft()) * tx.gasprice;
+            if(gas_consumed < 1e18) {
+                players_balances[player_2] += 5 * 1e18 + gas_consumed;
+                players_balances[owner] += 1 * 1e18 - gas_consumed;
+            }
+            else {
+                players_balances[player_2] += 5 * 1e18;
+                players_balances[owner] += 1 * 1e18;
+            }
         }
         
         delete players[player_1];
@@ -145,7 +161,7 @@ contract mc_morra {
         msg.sender.transfer(player_balance);
     }
     
-    function compute_hash(address player, uint256 played_nr_and_guess, uint256 safety_number) public pure returns(bytes32) {
+    function compute_hash(address player, uint256 played_nr_and_guess, uint256 safety_number) private pure returns(bytes32) {
         return keccak256(abi.encodePacked(player, played_nr_and_guess, safety_number));
     }
     
