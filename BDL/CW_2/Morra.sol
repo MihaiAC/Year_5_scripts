@@ -63,7 +63,6 @@ contract mc_morra {
         
         delete players[msg.sender];
         players_balances[msg.sender] = 5 * 1e18;
-        delete last_commit_block;
     }
     
     function reveal(uint256 played_nr_and_guess, uint256 safety_number) external {
@@ -82,6 +81,7 @@ contract mc_morra {
     
     
     function decide_winner() external {
+        uint gas_beginning = gasleft();
         require(msg.sender == player_1 || msg.sender == player_2, "Message sender is not a player.");
         require(players[player_1].revealed && players[player_2].revealed, "Players have not revealed yet.");
         
@@ -93,6 +93,7 @@ contract mc_morra {
         uint player_2_guess = pl2_nr % 2 ** 3;
         bool valid_1 = player_1_number > 0 && player_1_number <= 5;
         bool valid_2 = player_2_number > 0 && player_2_number <= 5;
+        bool is_player1 = msg.sender == player_1;
         
         if (valid_1 && valid_2) {
             bool guess_1 = player_1_guess == player_2_number;
@@ -109,12 +110,25 @@ contract mc_morra {
                 players_balances[player_1] += 6 * 1e18;
                 players_balances[player_2] += 6 * 1e18;
             }
+            uint256 gas_consumed = gas_beginning - 40000 - gasleft();
+            if(is_player1) {
+                players_balances[player_1] += gas_consumed / 2;
+                players_balances[player_2] -= gas_consumed / 2;
+            }
+            else {
+                players_balances[player_1] -= gas_consumed / 2;
+                players_balances[player_2] += gas_consumed / 2;
+            }
         }
         else if (valid_1) {
-            players_balances[player_1] += 5 * 1e18;
+            uint256 gas_consumed = gas_beginning - 40000 - gasleft();
+            players_balances[player_1] += 5 * 1e18 + gas_consumed;
+            players_balances[owner] += 1 * 1e18 - gas_consumed;
         }
         else if (valid_2) {
-            players_balances[player_2] += 5 * 1e18;
+            uint256 gas_consumed = gas_beginning - 40000 - gasleft();
+            players_balances[player_2] += 5 * 1e18 + gas_consumed;
+            players_balances[owner] += 1 * 1e18 - gas_consumed;
         }
         
         delete players[player_1];
@@ -140,17 +154,27 @@ contract mc_morra {
         require(players[player_1].commit != 0 && players[player_2].commit != 0, "Cannot end game. Fewer than two committed players.");
         bool p1_revealed = players[player_1].revealed;
         bool p2_revealed = players[player_2].revealed;
-        if(!p1_revealed || !p2_revealed) {
+        if (p1_revealed && !p2_revealed) {
             require(block.number > grace_period + last_commit_block, "Cannot end game until the grace period has passed.");
-            if(p2_revealed) {
-                players_balances[player_2] += 5 * 1e18;
-            }
-            else {
-                players_balances[player_1] += 5 * 1e18;
-            }
+            players_balances[player_1] += 5 * 1e18;
+            players_balances[owner] += 1 * 1e18;
+        }
+        else if(!p1_revealed && p2_revealed) {
+            require(block.number > grace_period + last_commit_block, "Cannot end game until the grace period has passed.");
+            players_balances[player_2] += 5 * 1e18;
+            players_balances[owner] += 1 * 1e18;
+        }
+        else if(!p1_revealed && !p2_revealed) {
+            require(block.number > grace_period + last_commit_block, "Cannot end game, grace period has not passed yet.");
+            players_balances[player_1] += 5 * 1e18;
+            players_balances[player_2] += 5 * 1e18;
+            players_balances[owner] += 2 * 1e18;
         }
         else {
             require(block.number > grace_period + last_reveal_block, "Cannot end game until the grace period has passed.");
+            players_balances[player_1] += 5 * 1e18;
+            players_balances[player_2] += 5 * 1e18;
+            players_balances[owner] += 2 * 1e18;
         }
         
         delete players[player_1];
@@ -159,15 +183,10 @@ contract mc_morra {
         delete player_2;
     }
     
-    //Owner-only function.
-    function withdraw_contract_balance() external only_owner {
-        msg.sender.transfer(address(this).balance);
-    }
-    
     receive() external payable {
         revert();
     }
-    ///Fallback function, do nothing for now.
+
     fallback() external payable {
         revert();
     }
