@@ -38,7 +38,7 @@ contract FairSwap is IERCiobReceiver {
     TokenContract public accepterToken;
 
     address private owner;
-    constructor(address initiatorTokenAddress, address accepterTokenAddress) {
+    constructor(address initiatorTokenAddress, address accepterTokenAddress) public {
         owner = msg.sender;
 
         initiatorToken.C = IERCiobToken(initiatorTokenAddress);
@@ -47,8 +47,8 @@ contract FairSwap is IERCiobReceiver {
         accepterToken.C = IERCiobToken(accepterTokenAddress);
         accepterToken.contractAddress = accepterTokenAddress;
 
-        initiateLockTime = 50; //10 minutes roughly -> decrease for testing; no one else can initiate contract;
-        acceptLockTime = 50; //no one can initiate contract; no one can accept contract; perhaps rename it.
+        initiateLockTime = 5; //10 minutes roughly -> decrease for testing; no one else can initiate contract;
+        acceptLockTime = 5; //no one can initiate contract; no one can accept contract; perhaps rename it.
     }
 
     function getInitiatorContractAddress() external view returns (address) {
@@ -96,7 +96,9 @@ contract FairSwap is IERCiobReceiver {
         lastActivity[accepter.id] = block.number;
         lastActivity[initiator.id] = block.number;
     }
-
+    
+    // Need to split this. Transfer will happen upon calling the withdraw functions.
+    // Contract isn't updated fast enough. 
     function receiveERCiobTokens(address sender, uint amount) public override {
         // Need to make sure that msg sender is one of two contracts.
         // Need to make sure that sender is one of two participants.
@@ -115,30 +117,15 @@ contract FairSwap is IERCiobReceiver {
             require(amount == initiator.nrTokens, "Insufficient number of tokens");
 
             if(accepter.paid) {
-                initiatorToken.C.transfer(accepter.id, initiator.nrTokens);
-                accepterToken.C.transfer(initiator.id, accepter.nrTokens);
-
                 // Emit an event probably.
-                // Is it necessary to require that these functions return true?.
-                // Now, reset contract state.
                 accepterTokenBalance[accepter.id].sub(accepter.nrTokens);
-
-                initiator.id = address(0);
-                initiator.nrTokens = 0;
-                initiator.paid = false;
-
-                accepter.id = address(0);
-                accepter.nrTokens = 0;
-                accepter.paid = false;
-
-                initiateBlock = 0;
-                acceptBlock = 0;
+                initiatorTokenBalance[accepter.id].add(initiator.nrTokens);
+                accepterTokenBalance[initiator.id].add(accepter.nrTokens);
             }
 
             else {
                 initiatorTokenBalance[initiator.id].add(initiator.nrTokens);
                 initiator.paid = true;
-                // Perhaps update last activity? Unsure. When do we update it?
             }
 
         }
@@ -146,23 +133,11 @@ contract FairSwap is IERCiobReceiver {
             require(sender == accepter.id, "Unrecognised sender");
             require(amount == accepter.nrTokens, "Insufficient number of tokens");
 
-
             if(initiator.paid) {
-                initiatorToken.C.transfer(accepter.id, initiator.nrTokens);
-                accepterToken.C.transfer(initiator.id, accepter.nrTokens);
-
+                // Emit an event probably?
+                accepterTokenBalance[initiator.id].add(accepter.nrTokens);
                 initiatorTokenBalance[initiator.id].sub(initiator.nrTokens);
-
-                initiator.id = address(0);
-                initiator.nrTokens = 0;
-                initiator.paid = false;
-
-                accepter.id = address(0);
-                accepter.nrTokens = 0;
-                accepter.paid = false;
-
-                initiateBlock = 0;
-                acceptBlock = 0;
+                initiatorTokenBalance[accepter.id].add(initiator.nrTokens);
             }
 
             else {
