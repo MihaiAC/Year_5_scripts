@@ -61,7 +61,8 @@ contract FairSwap is IERCiobReceiver {
 
     // Can restrict: initiator must have tokens from first contract, makes things easier, saves gas.
     // It is assumed that participants know which contracts are allowed. Each specify the contract they have tokens on.
-    function initiateSwap(uint256 initiatorTokens, address tokenAddress, address accepterAddress, uint256 requestedTokens) external {
+    function initiateSwap(uint256 initiatorTokens, 
+    address tokenAddress, address accepterAddress, uint256 requestedTokens) external {
         // tokenAddress = acts as a confirmation that the initiator is aware of which contract he has tokens on;
 
         require(initiatorToken.contractAddress == tokenAddress, "Incorrect initiator token address.");

@@ -39,10 +39,10 @@ contract FairSwap is IERCiobReceiver {
         require(isInitiator || isAccepter, "Unrecognised sender contract.");
 
         if (isInitiator) {
-            initTokenBalance[sender].add(amount);
+            initTokenBalance[sender] = initTokenBalance[sender].add(amount);
         }
         else {
-            acceptTokenBalance[sender].add(amount);
+            acceptTokenBalance[sender] = acceptTokenBalance[sender].add(amount);
         }
     }
 
@@ -68,13 +68,13 @@ contract FairSwap is IERCiobReceiver {
             IERCiobToken initContract = IERCiobToken(tokenInit);
             IERCiobToken acceptContract = IERCiobToken(tokenAccept);
 
-            initTokenBalance[initiator].sub(initiatorStake);
-            acceptTokenBalance[msg.sender].sub(tokens);
+            initTokenBalance[initiator] = initTokenBalance[initiator].sub(initiatorStake);
+            acceptTokenBalance[msg.sender] = acceptTokenBalance[msg.sender].sub(tokens);
 
             initContract.transfer(accepter, initiatorStake);
             acceptContract.transfer(initiator, accepterStake);
 
-            initiateBlock = 0;
+            initiateBlock = 0; // Potential hazard: double swap by accepter. This is against that.
         }
         else {
             revert("Swap details mismatch");
@@ -88,20 +88,20 @@ contract FairSwap is IERCiobReceiver {
 
         if(tokenAddress == tokenInit) {
             uint256 balance = initTokenBalance[msg.sender];
-            initTokenBalance[msg.sender].sub(balance);
+            initTokenBalance[msg.sender] = initTokenBalance[msg.sender].sub(balance);
 
             IERCiobToken token = IERCiobToken(tokenInit);
             token.transfer(msg.sender, balance);
         }
-
-        if(tokenAddress == tokenAccept) {
+        else if(tokenAddress == tokenAccept) {
             uint256 balance = acceptTokenBalance[msg.sender];
-            acceptTokenBalance[msg.sender].sub(balance);
+            acceptTokenBalance[msg.sender] = acceptTokenBalance[msg.sender].sub(balance);
 
             IERCiobToken token = IERCiobToken(tokenAccept);
             token.transfer(msg.sender, balance);
         }
-
-        revert("Unrecognised token contract.");
+        else {
+            revert("Unrecognised token contract.");
+        }
     }
 }
