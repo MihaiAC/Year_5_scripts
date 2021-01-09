@@ -7,23 +7,14 @@ import "./SafeMath.sol";
 contract FairSwap is IERCiobReceiver {
     using SafeMath for uint256;
 
-    struct TokenContract{
-        IERCiobToken C;
-        address contractAddress;
-    }
-
-    struct Participant {
-        address id;
-        uint256 nrTokens;
-        bool paid;
-    }
-
     mapping (address => uint256) lastActivity;
     mapping (address => uint256) accepterTokenBalance;
     mapping (address => uint256) initiatorTokenBalance;
 
-    Participant initiator;
-    Participant accepter;
+    address initiator;
+    address accepter;
+    uint256 initiatorStake;
+    uint256 accepterStake;
 
     uint256 initiateBlock;
     uint256 initiateLockTime;
@@ -34,72 +25,49 @@ contract FairSwap is IERCiobReceiver {
     bool initiatorPaid;
     bool accepterPaid;
 
-    TokenContract public initiatorToken;
-    TokenContract public accepterToken;
+    address public initToken;
+    address public acceptToken;
 
     address private owner;
     constructor(address initiatorTokenAddress, address accepterTokenAddress) public {
         owner = msg.sender;
 
-        initiatorToken.C = IERCiobToken(initiatorTokenAddress);
-        initiatorToken.contractAddress = initiatorTokenAddress;
-
-        accepterToken.C = IERCiobToken(accepterTokenAddress);
-        accepterToken.contractAddress = accepterTokenAddress;
+       initToken = initiatorTokenAddress;
+       acceptToken = accepterTokenAddress;
 
         initiateLockTime = 5; //10 minutes roughly -> decrease for testing; no one else can initiate contract;
         acceptLockTime = 5; //no one can initiate contract; no one can accept contract; perhaps rename it.
     }
 
-    function getInitiatorContractAddress() external view returns (address) {
-        return initiatorToken.contractAddress;
-    }
-
-    function getAccepterContractAddress() external view returns (address) {
-        return accepterToken.contractAddress;
-    }
-
-    // Can restrict: initiator must have tokens from first contract, makes things easier, saves gas.
-    // It is assumed that participants know which contracts are allowed. Each specify the contract they have tokens on.
-    function initiateSwap(uint256 initiatorTokens, 
-    address tokenAddress, address accepterAddress, uint256 requestedTokens) external {
-        // tokenAddress = acts as a confirmation that the initiator is aware of which contract he has tokens on;
-
-        require(initiatorToken.contractAddress == tokenAddress, "Incorrect initiator token address.");
+    function initiateSwap(uint256 initiatorTokens, address accepterAddress, uint256 requestedTokens) external {
         require(block.number - initiateBlock > initiateLockTime, "Another swap is currently in progress.");
         require(block.number - acceptBlock > acceptLockTime, "Another swap is currently in progress.");
 
-        initiator.id = msg.sender;
-        initiator.nrTokens = initiatorTokens;
+        initiator = msg.sender;
+        initiatorStake = initiatorTokens;
 
-        accepter.id = accepterAddress;
-        accepter.nrTokens = requestedTokens;
+        accepter = accepterAddress;
+        accepterStake = requestedTokens;
 
         initiateBlock = block.number;
         //Emit an event perhaps.
     }
 
-    function acceptSwap(uint256 nrTokens, address tokenAddress, address initiatorAddress, uint256 requestedTokens) external {
-        // Can call accept swap if initiated is true.
-        // If accepted is false.
-        // That's all, match; if everything checks out COOL + set shit.
-        require(accepterToken.contractAddress == tokenAddress, "Incorrect accepter token address."); // This could be safely removed. Same above.
+    function acceptSwap(uint256 nrTokens, address initiatorAddress, uint256 requestedTokens) external {
         require(block.number - initiateBlock <= initiateLockTime, "Late accept.");
         require(block.number - acceptBlock > acceptLockTime, "Another swap is currently in progress.");
 
-        require(nrTokens == accepter.nrTokens, "Swap details mismatch: accepter.nrTokens");
-        require(requestedTokens == initiator.nrTokens, "Swap details mismatch: initiator.nrTokens");
-        require(initiatorAddress == initiator.id, "Swap details mismatch: initiator identity");
-        require(msg.sender == accepter.id, "Swap details mismatch: accepter identity");
-
-        acceptBlock = block.number;
-        // Perhaps emit an event that swap has begun.
-        lastActivity[accepter.id] = block.number;
-        lastActivity[initiator.id] = block.number;
+        if(nrTokens == accepterStake && requestedTokens == initiatorStake && msg.sender == accepter && initiatorAddress == initiator) {
+            acceptBlock = block.number;
+            
+            lastActivity[accepter] = block.number;
+            lastActivity[initiator] = block.number;
+        }
+        else {
+            revert("Swap details mismatch.");
+        }
     }
     
-    // Need to split this. Transfer will happen upon calling the withdraw functions.
-    // Contract isn't updated fast enough. 
     function receiveERCiobTokens(address sender, uint amount) public override {
         // Need to make sure that msg sender is one of two contracts.
         // Need to make sure that sender is one of two participants.
@@ -109,24 +77,24 @@ contract FairSwap is IERCiobReceiver {
         // Paid [msg.sender] must be false.
         require(block.number - acceptBlock <= acceptLockTime, "Funds sent too late.");
         
-        bool isInitiator = msg.sender == initiatorToken.contractAddress;
-        bool isAccepter = msg.sender == accepterToken.contractAddress;
+        bool isInitiator = msg.sender == initToken;
+        bool isAccepter = msg.sender == acceptToken;
         require(isInitiator || isAccepter, "Unrecognised sender contract.");
 
         if (isInitiator) {
-            require(sender == initiator.id, "Unrecognised sender.");
-            require(amount == initiator.nrTokens, "Insufficient number of tokens");
+            require(sender == initiator, "Unrecognised sender.");
+            require(amount == initiatorStake, "Insufficient number of tokens");
 
             if(accepter.paid) {
                 // Emit an event probably.
-                accepterTokenBalance[accepter.id].sub(accepter.nrTokens);
-                initiatorTokenBalance[accepter.id].add(initiator.nrTokens);
-                accepterTokenBalance[initiator.id].add(accepter.nrTokens);
+                accepterTokenBalance[accepter] = accepterTokenBalance[accepter].sub(accepterStake);
+                initiatorTokenBalance[accepter] = initiatorTokenBalance[accepter.id].add(initiatorStake);
+                accepterTokenBalance[initiator] = accepterTokenBalance[initiator].add(accepterStake);
             }
 
             else {
-                initiatorTokenBalance[initiator.id].add(initiator.nrTokens);
-                initiator.paid = true;
+                initiatorTokenBalance[initiator] = initiatorTokenBalance[initiator].add(initiatorStake);
+                initiatorPaid = true;
             }
 
         }
@@ -136,20 +104,20 @@ contract FairSwap is IERCiobReceiver {
 
             if(initiator.paid) {
                 // Emit an event probably?
-                accepterTokenBalance[initiator.id].add(accepter.nrTokens);
-                initiatorTokenBalance[initiator.id].sub(initiator.nrTokens);
-                initiatorTokenBalance[accepter.id].add(initiator.nrTokens);
+                accepterTokenBalance[initiator] = accepterTokenBalance[initiator].add(accepterStake);
+                initiatorTokenBalance[accepter] = initiatorTokenBalance[accepter].add(initiatorStake);
+                initiatorTokenBalance[initiator] = initiatorTokenBalance[initiator].sub(initiatorStake);
             }
 
             else {
-                accepterTokenBalance[accepter.id].add(accepter.nrTokens);
-                accepter.paid = true;
+                accepterTokenBalance[accepter] = accepterTokenBalance[accepter].add(accepterStake);
+                accepterPaid = true;
             }
-
         }
     }
 
     function withdrawInitiatorBalance() external {
+        
         require(block.number - lastActivity[msg.sender] > acceptLockTime, "Cannot withdraw yet.");
         if(initiatorTokenBalance[msg.sender] > 0) {
             uint256 balance = initiatorTokenBalance[msg.sender];

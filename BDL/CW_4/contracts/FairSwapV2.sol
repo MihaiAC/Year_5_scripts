@@ -22,11 +22,10 @@ contract FairSwap is IERCiobReceiver {
     uint256 lockTime;
     uint256 initiateBlock;
 
-    address private owner;
+    event SwapInitiated(address initiator, address accepter, uint256 initiatorStake, uint256 accepterStake);
+    event SwapFinished(address initiator, address accepter, uint256 initiatorStake, uint256 accepterStake);
 
     constructor(address initContract, address acceptContract) public {
-        owner = msg.sender;
-
         tokenInit = initContract;
         tokenAccept = acceptContract;
 
@@ -56,7 +55,7 @@ contract FairSwap is IERCiobReceiver {
         accepterStake = partnerTokens;
 
         initiateBlock = block.number;
-        // Probably emit an event.
+        emit SwapInitiated(initiator, accepter, initiatorStake, accepterStake);
     }
 
     function acceptSwap(uint256 tokens, address swapPartner, uint256 partnerTokens) external {
@@ -69,12 +68,13 @@ contract FairSwap is IERCiobReceiver {
             IERCiobToken acceptContract = IERCiobToken(tokenAccept);
 
             initTokenBalance[initiator] = initTokenBalance[initiator].sub(initiatorStake);
-            acceptTokenBalance[msg.sender] = acceptTokenBalance[msg.sender].sub(tokens);
+            acceptTokenBalance[accepter] = acceptTokenBalance[accepter].sub(accepterStake);
 
             initContract.transfer(accepter, initiatorStake);
             acceptContract.transfer(initiator, accepterStake);
 
-            initiateBlock = 0; // Potential hazard: double swap by accepter. This is against that.
+            initiateBlock = 0; // Potential hazard: double swap by accepter. This is against that. Could also make initiator 0x?
+            emit SwapFinished(initiator, accepter, initiatorStake, accepterStake);
         }
         else {
             revert("Swap details mismatch");
@@ -82,7 +82,7 @@ contract FairSwap is IERCiobReceiver {
     }
 
     function withdrawTokens(address tokenAddress) external {
-        if(msg.sender == initiator) {
+        if(msg.sender == initiator && tokenAddress == tokenInit) {
             require(block.number - initiateBlock > lockTime, "You have committed to a swap. Cannot withdraw at this time");
         }
 
