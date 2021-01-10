@@ -26,10 +26,18 @@ contract FairSwap is IERCiobReceiver {
     event SwapFinished(address initiator, address accepter, uint256 initiatorStake, uint256 accepterStake);
 
     constructor(address initContract, address acceptContract) public {
+        require(initContract != acceptContract, "C1 and C2 must differ");
+
         tokenInit = initContract;
         tokenAccept = acceptContract;
 
         lockTime = 5;
+        
+        initiator = msg.sender;
+        initiatorStake = 1;
+        accepter = msg.sender;
+        accepterStake = 1;
+        initiateBlock = 1;
     }
 
     function receiveERCiobTokens(address sender, uint amount) public override {
@@ -46,7 +54,7 @@ contract FairSwap is IERCiobReceiver {
     }
 
     function initiateSwap(uint256 tokens, address swapPartner, uint256 partnerTokens) external {
-        require(block.number - initiateBlock > lockTime, "Another swap is currently in progress.");
+        require(block.number.sub(initiateBlock) > lockTime, "Another swap is currently in progress.");
         require(initTokenBalance[msg.sender] >= tokens, "Insufficient funds.");
 
         initiator = msg.sender;
@@ -59,21 +67,17 @@ contract FairSwap is IERCiobReceiver {
     }
 
     function acceptSwap(uint256 tokens, address swapPartner, uint256 partnerTokens) external {
-        require(block.number - initiateBlock <= lockTime, "Late accept.");
+        require(block.number.sub(initiateBlock) <= lockTime, "Late accept.");
 
         if(tokens == accepterStake && swapPartner == initiator && msg.sender == accepter && partnerTokens == initiatorStake) {
             require(acceptTokenBalance[msg.sender] >= tokens, "Insufficient funds to accept the swap.");
 
-            IERCiobToken initContract = IERCiobToken(tokenInit);
-            IERCiobToken acceptContract = IERCiobToken(tokenAccept);
-
             initTokenBalance[initiator] = initTokenBalance[initiator].sub(initiatorStake);
             acceptTokenBalance[accepter] = acceptTokenBalance[accepter].sub(accepterStake);
+            initTokenBalance[accepter] = initTokenBalance[accepter].add(initiatorStake);
+            acceptTokenBalance[initiator] = acceptTokenBalance[initiator].add(accepterStake);
 
-            initiateBlock = 0; // Potential hazard: double swap by accepter. This is against that. Could also make initiator 0x?
-
-            initContract.transfer(accepter, initiatorStake);
-            acceptContract.transfer(initiator, accepterStake);
+            initiateBlock = 1; // Potential hazard: double swap by accepter. This is against that. Could also make initiator 0x?
 
             emit SwapFinished(initiator, accepter, initiatorStake, accepterStake);
         }
@@ -83,10 +87,6 @@ contract FairSwap is IERCiobReceiver {
     }
 
     function withdrawTokens(address tokenAddress) external {
-        if(msg.sender == initiator && tokenAddress == tokenInit) {
-            require(block.number - initiateBlock > lockTime, "You have committed to a swap. Cannot withdraw at this time");
-        }
-
         if(tokenAddress == tokenInit) {
             uint256 balance = initTokenBalance[msg.sender];
             initTokenBalance[msg.sender] = initTokenBalance[msg.sender].sub(balance);
