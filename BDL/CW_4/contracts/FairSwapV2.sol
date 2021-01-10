@@ -70,10 +70,11 @@ contract FairSwap is IERCiobReceiver {
             initTokenBalance[initiator] = initTokenBalance[initiator].sub(initiatorStake);
             acceptTokenBalance[accepter] = acceptTokenBalance[accepter].sub(accepterStake);
 
+            initiateBlock = 0; // Potential hazard: double swap by accepter. This is against that. Could also make initiator 0x?
+
             initContract.transfer(accepter, initiatorStake);
             acceptContract.transfer(initiator, accepterStake);
 
-            initiateBlock = 0; // Potential hazard: double swap by accepter. This is against that. Could also make initiator 0x?
             emit SwapFinished(initiator, accepter, initiatorStake, accepterStake);
         }
         else {
