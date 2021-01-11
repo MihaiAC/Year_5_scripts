@@ -31,7 +31,7 @@ contract FairSwap is IERCiobReceiver {
         tokenInit = initContract;
         tokenAccept = acceptContract;
 
-        lockTime = 5;
+        lockTime = 50;
         
         initiator = msg.sender;
         initiatorStake = 1;
@@ -55,7 +55,6 @@ contract FairSwap is IERCiobReceiver {
 
     function initiateSwap(uint256 tokens, address swapPartner, uint256 partnerTokens) external {
         require(block.number.sub(initiateBlock) > lockTime, "Another swap is currently in progress.");
-        require(initTokenBalance[msg.sender] >= tokens, "Insufficient funds.");
 
         initiator = msg.sender;
         initiatorStake = tokens;
@@ -67,17 +66,16 @@ contract FairSwap is IERCiobReceiver {
     }
 
     function acceptSwap(uint256 tokens, address swapPartner, uint256 partnerTokens) external {
-        require(block.number.sub(initiateBlock) <= lockTime, "Late accept.");
+        require(block.number.sub(initiateBlock) <= lockTime, "Late accept or swap has finished.");
 
         if(tokens == accepterStake && swapPartner == initiator && msg.sender == accepter && partnerTokens == initiatorStake) {
-            require(acceptTokenBalance[msg.sender] >= tokens, "Insufficient funds to accept the swap.");
 
             initTokenBalance[initiator] = initTokenBalance[initiator].sub(initiatorStake);
             acceptTokenBalance[accepter] = acceptTokenBalance[accepter].sub(accepterStake);
             initTokenBalance[accepter] = initTokenBalance[accepter].add(initiatorStake);
             acceptTokenBalance[initiator] = acceptTokenBalance[initiator].add(accepterStake);
 
-            initiateBlock = 1; // Potential hazard: double swap by accepter. This is against that. Could also make initiator 0x?
+            initiateBlock = 1;
 
             emit SwapFinished(initiator, accepter, initiatorStake, accepterStake);
         }

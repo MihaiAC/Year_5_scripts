@@ -6,20 +6,20 @@ import "./IERCiobReceiver.sol";
 contract ERCiobToken {
     using SafeMath for uint256;
 
-    uint256 public transfer_timeout_period;
+    uint256 private transfer_timeout_period;
     uint256 public tokenPrice;
-    uint256 public nrSoldTokens;
-    uint256 public last_price_change_block;
+    uint256 private nrSoldTokens;
+    uint256 private last_price_change_block;
     
-    address public owner;
-    mapping (address => uint256) owned_tokens;
+    address private owner;
+    mapping (address => uint256) private owned_tokens;
     
     event Purchase(address buyer, uint256 amount);
     event Transfer(address sender, address receiver, uint256 amount);
     event Sell(address seller, uint256 amount);
     event Price(uint256 price);
 
-    constructor() public {
+    constructor() {
         owner = msg.sender;
         tokenPrice = 5e14;
         transfer_timeout_period = 25;
