@@ -18,7 +18,7 @@ def standardise_docIDs_file(start_id:int, file_path:str, new_file_name:str, file
 
     """
     folder_path, file_name = os.path.split(file_path)
-    new_file_path = folder_path + '/aux_' + new_file_name
+    new_file_path = folder_path + '/' + new_file_name
 
     with open(file_path, 'r') as f:
         with open(new_file_path, 'w') as g:
@@ -32,7 +32,8 @@ def standardise_docIDs_file(start_id:int, file_path:str, new_file_name:str, file
                 cache.append(json.dumps(data))
 
                 if len(cache) == cache_max_size:
-                    g.writelines(cache)
+                    for line in cache:
+                        g.write(line + '\n')
                     cache = []
             
             if len(cache) > 0:
