@@ -3,24 +3,34 @@ import os
 import sys
 import logging
 import argparse
+import time
 from socket import *
 
 # Initialise the log file.
-logging.basicConfig(filename='Sender1.logs',
+logging.basicConfig(filename='Sender2.logs',
                     filemode='w',
                     level=logging.INFO)
+
+# TODO: Need a variable for timeout for last message.
+# TODO: Perhaps need to set a max number of wait cycles.
+max_resends = 3
+total_time = 0
+total_bytes_sent = 0
+nr_retransmissions = 0
 
 # Initialise argparser.
 parser = argparse.ArgumentParser()
 parser.add_argument('RemoteHost', type=str)
 parser.add_argument('Port', type=int)
 parser.add_argument('FileName', type=str)
+parser.add_argument('RetryTimeout', type=int)
 
 # Read arguments.
 args = parser.parse_args()
 remoteHost = args.RemoteHost
 port = args.Port
 fileName = args.FileName
+timeout = args.RetryTimeout
 logging.info("Arguments parsed.")
 
 # We can send a maximum number of 2**16 packets (2 bytes).
@@ -54,15 +64,44 @@ with open(fileName, 'rb') as f:
 
         # Create message and send it.
         message = packet_nr_bytes + flag_bytes + current_chunk
-        clientSocket.sendto(message, (remoteHost, port))
-        logging.info("Sent packet " + str(packet_nr))
+        
+        resends = 0
+        send_time = time.time()
+        while(True):
+            clientSocket.sendto(message, (remoteHost, port))
+            logging.info("Sent packet " + str(packet_nr))
+            clientSocket.settimeout(timeout/1000)
+            try:
+                # We need to check that the seq number in the ACK corresponds to what
+                # we were expecting (can receive ACKs for past resent packets, which were
+                # resent too fast).
+                while(True):
+                    ack_response, server_address = clientSocket.recvfrom(2)
+                    if packet_nr != int.from_bytes(ack_response, 'big'):
+                        continue
+                    else:
+                        receive_time = time.time()
+                        total_time += receive_time - send_time
+                        break
+                break
 
-        if len(next_chunk) == 0:
+            except error:
+                nr_retransmissions += 1
+                logging.info("Packet " + str(packet_nr) + " needs to be resent.")
+                if flag == 1 and resends == max_resends:
+                    break
+                else:
+                    resends += 1
+
+        packet_nr += 1
+        total_bytes_sent += len(message)
+        if flag == 1:
             break
         else:
             current_chunk = next_chunk
-            packet_nr += 1
+        resends = 0
 
+print(str(nr_retransmissions) + " " + str(total_bytes_sent/(1000*total_time)))
 clientSocket.close()
 logging.info("Finished sending all the packets.")
     
