@@ -14,8 +14,6 @@ logging.basicConfig(filename='Sender2.logs',
 # TODO: Need a variable for timeout for last message.
 # TODO: Perhaps need to set a max number of wait cycles.
 max_resends = 3
-total_time = 0
-total_bytes_sent = 0
 nr_retransmissions = 0
 
 # Initialise argparser.
@@ -66,7 +64,7 @@ with open(fileName, 'rb') as f:
         message = packet_nr_bytes + flag_bytes + current_chunk
         
         resends = 0
-        send_time = time.time()
+        transmission_start_time = time.time()
         while(True):
             clientSocket.sendto(message, (remoteHost, port))
             logging.info("Sent packet " + str(packet_nr))
@@ -80,8 +78,6 @@ with open(fileName, 'rb') as f:
                     if packet_nr != int.from_bytes(ack_response, 'big'):
                         continue
                     else:
-                        receive_time = time.time()
-                        total_time += receive_time - send_time
                         break
                 break
 
@@ -94,14 +90,16 @@ with open(fileName, 'rb') as f:
                     resends += 1
 
         packet_nr += 1
-        total_bytes_sent += len(message)
         if flag == 1:
             break
         else:
             current_chunk = next_chunk
         resends = 0
 
-print(str(nr_retransmissions) + " " + str(total_bytes_sent/(1000*total_time)))
+transmission_end_time = time.time()
+total_transmission_time = transmission_end_time - transmission_start_time
+file_size_in_bytes = os.path.getsize(fileName)
+print(str(nr_retransmissions) + " " + str(file_size_in_bytes/(1000*total_transmission_time)))
 clientSocket.close()
 logging.info("Finished sending all the packets.")
     

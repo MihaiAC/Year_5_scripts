@@ -4,6 +4,7 @@ import sys
 import logging
 import argparse
 import time
+import numpy as np
 from socket import *
 from typing import List, Dict, Tuple
 
@@ -12,8 +13,6 @@ logging.basicConfig(filename='Sender3.logs',
                     filemode='w',
                     level=logging.INFO)
 
-# TODO: Need a variable for timeout for last message.
-# TODO: Perhaps need to set a max number of wait cycles.
 max_resends = 3
 
 # Initialise argparser.
@@ -32,6 +31,8 @@ fileName = args.FileName
 timeout = args.RetryTimeout
 window_size = args.WindowSize
 logging.info("Arguments parsed.")
+
+timeout_seconds = timeout/1000
 
 # We can send a maximum number of 2**16 packets (2 bytes).
 # Each packet can transmit a maximum of 1024 bytes.
@@ -56,53 +57,57 @@ def read_whole_file(fileName:str) -> Tuple[Dict[int, bytes], int]:
 # Open up a client socket.
 clientSocket = socket(AF_INET, SOCK_DGRAM)
 
+
 logging.info("Started sending packets.")
 file_dict, max_packet_nr = read_whole_file(fileName)
 max_packet_nr -= 1
 
 base_nr = 0
-next_packet_nr = 0
 transmission_start_time = time.time()
+ack_packet = np.zeros((max_packet_nr+1, ))
+packet_send_time = dict()
+
 while(True):
     # Send packets until the window is full.
-    # Philosophical question: when is the window full? is it ever truly full?
-    prev_next_packet_nr = next_packet_nr
-    for ii in range(prev_next_packet_nr, min(max_packet_nr+1, base_nr+window_size)):
-        flag = 1 if ii == max_packet_nr else 0
-        message = ii.to_bytes(2, 'big') + flag.to_bytes(1, 'big') + file_dict[ii]
-        clientSocket.sendto(message, (remoteHost, port))
-        
-        if ii == prev_next_packet_nr:
-            clientSocket.settimeout(timeout/1000)
+    for ii in range(base_nr, min(max_packet_nr+1, base_nr+window_size)):
+        if not ack_packet[ii]:
+            flag = 1 if ii == max_packet_nr else 0
+            message = ii.to_bytes(2, 'big') + flag.to_bytes(1, 'big') + file_dict[ii]
 
-        logging.info("Sent packet " + str(ii))
-        next_packet_nr += 1
-
-    try:
-        # We need to check that the seq number in the ACK corresponds to what
-        # we were expecting (can receive ACKs for past resent packets, which were
-        # resent too fast).
-        while(True):
+            # Check timer for this packet. If it's expired, and the packet is unacknowledged
+            # send it.
+            if ii in packet_send_time and time.time()-packet_send_time[ii] < timeout_seconds:
+                continue
+            
+            packet_send_time[ii] = time.time()
+            clientSocket.sendto(message, (remoteHost, port))
+            logging.info("Sent packet " + str(ii))
+    
+    # TODO: how can I make this more efficient? 
+    # Can repeat this for window_size-1??
+    # This is not a good solution. I need some sort of alert for when a packet is received.
+    
+    # Repeat this loop until either the timeout passes or we've repeated it for window_size times.
+    # Or all packages in current windows have been received?
+    start_timer = time.time()
+    repeats = window_size
+    while(time.time()-start_timer <= timeout_seconds or repeats >= 0):
+        try:
+            # We need to check that the seq number in the ACK corresponds to what
+            # we were expecting (can receive ACKs for past resent packets, which were
+            # resent too fast).
             ack_response, server_address = clientSocket.recvfrom(2)
-            response_packet_number = int.from_bytes(ack_response, 'big')
-            base_nr = response_packet_number + 1
+            ack_packet_number = int.from_bytes(ack_response, 'big')
+            if base_nr == ack_packet_number:
+                base_nr += 1
+            ack_packet[ack_packet_number] = 1
 
-            if base_nr == next_packet_nr: 
-                break
-            else:
-                clientSocket.settimeout(timeout/1000)
+        except error:
+            # No more packets?? debatable wait
+            break
+        repeats -= 1
 
-    except error:
-        # Need to resend all packets starting from base.
-        # logging.info("Packet " + str(packet_nr) + " needs to be resent.")
-
-        # TODO: not sure if special treatment is needed for the last packet.
-        # if flag == 1 and resends == max_resends:
-        #     break
-        # else:
-        #     pass
-
-        next_packet_nr = base_nr
+    # TODO: The last packet is not literally the last here; 
 
     if base_nr == max_packet_nr+1:
         break
