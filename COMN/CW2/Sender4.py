@@ -9,7 +9,7 @@ from socket import *
 from typing import List, Dict, Tuple
 
 # Initialise the log file.
-logging.basicConfig(filename='Sender3.logs',
+logging.basicConfig(filename='Sender4.logs',
                     filemode='w',
                     level=logging.INFO)
 
@@ -56,6 +56,7 @@ def read_whole_file(fileName:str) -> Tuple[Dict[int, bytes], int]:
 
 # Open up a client socket.
 clientSocket = socket(AF_INET, SOCK_DGRAM)
+clientSocket.settimeout(0)
 
 
 logging.info("Started sending packets.")
@@ -64,7 +65,7 @@ max_packet_nr -= 1
 
 base_nr = 0
 transmission_start_time = time.time()
-ack_packet = np.zeros((max_packet_nr+1, ))
+ack_packet = np.zeros((max_packet_nr+2, ))
 packet_send_time = dict()
 
 while(True):
@@ -91,25 +92,31 @@ while(True):
     # Or all packages in current windows have been received?
     start_timer = time.time()
     repeats = window_size
+
     while(time.time()-start_timer <= timeout_seconds or repeats >= 0):
+        repeats -= 1
         try:
             # We need to check that the seq number in the ACK corresponds to what
             # we were expecting (can receive ACKs for past resent packets, which were
             # resent too fast).
             ack_response, server_address = clientSocket.recvfrom(2)
             ack_packet_number = int.from_bytes(ack_response, 'big')
-            if base_nr == ack_packet_number:
-                base_nr += 1
+            logging.info("Received ACK for packet " + str(ack_packet_number))
             ack_packet[ack_packet_number] = 1
 
         except error:
-            # No more packets?? debatable wait
+            continue
+    
+    # Update base number.
+    old_base_nr = base_nr
+    for ii in range(old_base_nr, min(max_packet_nr+1, base_nr+window_size)):
+        if ack_packet[ii]:
+            base_nr = ii+1
+        else:
             break
-        repeats -= 1
 
     # TODO: The last packet is not literally the last here; 
-
-    if base_nr == max_packet_nr+1:
+    if base_nr == max_packet_nr+1 or ack_packet[max_packet_nr+1]:
         break
 
 transmission_end_time = time.time()
