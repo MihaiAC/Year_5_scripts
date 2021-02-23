@@ -24,11 +24,12 @@ logging.info("Arguments parsed.")
 # Create server socket.
 serverSocket = socket(AF_INET, SOCK_DGRAM)
 serverSocket.bind(('', serverPort))
+serverSocket.setsockopt(SOL_SOCKET, SO_RCVBUF, 131072)
 logging.info("Server initialised.")
 
 # The received chunks will be saved in a dictionary.
 chunks_dict = dict()
-nr_sent_packets = -1
+max_packet_number = -1
 while(True):
     message, clientAddress = serverSocket.recvfrom(1027)
 
@@ -40,18 +41,18 @@ while(True):
     if flag == 1:
         # Last packet detected; we can extract the max nr of packets from here.
         # This is not a guarantee that all the packets have been received (we're using UDP).
-        nr_sent_packets = packet_nr + 1
+        max_packet_number = packet_nr
         logging.info("Last sent packet received.")
     
     chunks_dict[packet_nr] = chunk
 
-    if len(chunks_dict) == nr_sent_packets:
+    if len(chunks_dict) == max_packet_number+1:
         logging.info("All packets have been received.")
         serverSocket.close()
         break
     
 logging.info("Reconstructing file.")
 with open(fileName, 'wb') as f:
-    for ii in range(nr_sent_packets):
+    for ii in range(max_packet_number+1):
         f.write(chunks_dict[ii])
 logging.info("File saved.")

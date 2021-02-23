@@ -32,6 +32,7 @@ if os.path.getsize(fileName) > 2**26:
 
 # Open up a client socket.
 clientSocket = socket(AF_INET, SOCK_DGRAM)
+clientSocket.setsockopt(SOL_SOCKET, SO_SNDBUF, 16384)
 
 logging.info("Started sending packets.")
 with open(fileName, 'rb') as f:

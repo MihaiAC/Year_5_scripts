@@ -11,8 +11,6 @@ logging.basicConfig(filename='Sender2.logs',
                     filemode='w',
                     level=logging.INFO)
 
-# TODO: Need a variable for timeout for last message.
-# TODO: Perhaps need to set a max number of wait cycles.
 max_resends = 3
 nr_retransmissions = 0
 
@@ -40,8 +38,11 @@ if os.path.getsize(fileName) > 2**26:
 
 # Open up a client socket.
 clientSocket = socket(AF_INET, SOCK_DGRAM)
+clientSocket.setsockopt(SOL_SOCKET, SO_SNDBUF, 16384)
+clientSocket.setsockopt(SOL_SOCKET, SO_RCVBUF, 131072)
 
 logging.info("Started sending packets.")
+transmission_start_time = time.time()
 with open(fileName, 'rb') as f:
     # Read the first 1024-bytes chunk from the file to be sent.
     current_chunk = f.read(1024)
@@ -64,7 +65,6 @@ with open(fileName, 'rb') as f:
         message = packet_nr_bytes + flag_bytes + current_chunk
         
         resends = 0
-        transmission_start_time = time.time()
         while(True):
             clientSocket.sendto(message, (remoteHost, port))
             logging.info("Sent packet " + str(packet_nr))

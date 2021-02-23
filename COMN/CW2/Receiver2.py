@@ -26,6 +26,8 @@ logging.info("Arguments parsed.")
 # Create server socket.
 serverSocket = socket(AF_INET, SOCK_DGRAM)
 serverSocket.bind(('', serverPort))
+serverSocket.setsockopt(SOL_SOCKET, SO_SNDBUF, 16384)
+serverSocket.setsockopt(SOL_SOCKET, SO_RCVBUF, 131072)
 logging.info("Server initialised.")
 
 # The received chunks will be saved in a dictionary.
