@@ -73,4 +73,48 @@ def test_p2():
         avg_throughputs = calculate_average(throughputs)
         print(str(avg_retransmissions) + ' ' + str(avg_throughputs))
 
-test_p2()
+def test_p3():
+    sender_instr = "python3 Sender3.py localhost 12000 test.jpg 18 "
+    for window_size in [1, 2, 4, 8, 16, 32, 64, 128, 256]:
+        curr_sender_instr = sender_instr + str(window_size)
+        throughputs = []
+        for _ in range(5):
+            receiver = subprocess.Popen("python3 Receiver3.py 12000 new_test.jpg",
+                            shell=True,
+                            stdout=subprocess.PIPE,
+                            preexec_fn=os.setsid,
+                            cwd=r'/vagrant/CW2')
+
+            sender = subprocess.Popen(curr_sender_instr,
+                                    shell=True,
+                                    stdout=subprocess.PIPE,
+                                    preexec_fn=os.setsid,
+                                    cwd=r'/vagrant/CW2')
+            
+            while(sender.poll() is None):
+                time.sleep(1)
+
+            start_time = time.time()
+            correctly_terminated = True
+            while(receiver.poll() is None):
+                time.sleep(1)
+                if time.time() - start_time > 10:
+                    correctly_terminated = False
+                    break
+            
+            if not correctly_terminated:
+                print('Receiver did not terminate correctly.')
+                return 0
+            
+            if not check_identical_files():
+                print('Files not identical.')
+                return 0
+            
+            sender_output = sender.stdout.read().decode('utf-8')[:-1]
+            numbers = extract_numbers(sender_output)
+            throughputs.append(numbers[0])
+        print(str(window_size) + ':')
+        avg_throughput = calculate_average(throughputs)
+        print(str(avg_throughput))
+
+test_p3()
