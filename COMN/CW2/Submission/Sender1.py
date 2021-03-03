@@ -6,9 +6,9 @@ import argparse
 from socket import *
 
 # Initialise the log file.
-logging.basicConfig(filename='Sender1.logs',
-                    filemode='w',
-                    level=logging.INFO)
+# logging.basicConfig(filename='Sender1.logs',
+#                     filemode='w',
+#                     level=logging.INFO)
 
 # Initialise argparser.
 parser = argparse.ArgumentParser()
@@ -21,20 +21,19 @@ args = parser.parse_args()
 remoteHost = args.RemoteHost
 port = args.Port
 fileName = args.FileName
-logging.info("Arguments parsed.")
+# logging.info("Arguments parsed.")
 
 # We can send a maximum number of 2**16 packets (2 bytes).
 # Each packet can transmit a maximum of 1024 bytes.
 # Therefore, we can only transmit files of size <= 2**26 bytes.
 if os.path.getsize(fileName) > 2**26:
-    logging.info("File too large; script finished.")
+    # logging.info("File too large; script finished.")
     sys.exit("File too large.")
 
 # Open up a client socket.
 clientSocket = socket(AF_INET, SOCK_DGRAM)
-clientSocket.setsockopt(SOL_SOCKET, SO_SNDBUF, 16384)
 
-logging.info("Started sending packets.")
+# logging.info("Started sending packets.")
 with open(fileName, 'rb') as f:
     # Read the first 1024-bytes chunk from the file to be sent.
     current_chunk = f.read(1024)
@@ -56,7 +55,7 @@ with open(fileName, 'rb') as f:
         # Create message and send it.
         message = packet_nr_bytes + flag_bytes + current_chunk
         clientSocket.sendto(message, (remoteHost, port))
-        logging.info("Sent packet " + str(packet_nr))
+        # logging.info("Sent packet " + str(packet_nr))
 
         if len(next_chunk) == 0:
             break
@@ -65,5 +64,5 @@ with open(fileName, 'rb') as f:
             packet_nr += 1
 
 clientSocket.close()
-logging.info("Finished sending all the packets.")
+# logging.info("Finished sending all the packets.")
     

@@ -8,10 +8,9 @@ from typing import Dict
 
 resend_last_packet_n_times = 15
 
-# TODO: Initialise the log file (for debugging).
-logging.basicConfig(filename='Receiver4.logs',
-                    filemode='w',
-                    level=logging.INFO)
+# logging.basicConfig(filename='Receiver4.logs',
+#                     filemode='w',
+#                     level=logging.INFO)
 
 # Initialise argparser.
 parser = argparse.ArgumentParser()
@@ -24,12 +23,12 @@ args = parser.parse_args()
 serverPort = args.Port
 fileName = args.FileName
 window_size = args.WindowSize
-logging.info("Arguments parsed.")
+# logging.info("Arguments parsed.")
 
 # Create server socket.
 serverSocket = socket(AF_INET, SOCK_DGRAM)
 serverSocket.bind(('', serverPort))
-logging.info("Server initialised.")
+# logging.info("Server initialised.")
 
 # The received chunks will be saved in a dictionary.
 chunks_dict = dict()
@@ -49,11 +48,11 @@ while(True):
     # Aka a contract between sender and receiver.
     # Can this never end?
 
-    logging.info("Packet " + str(packet_nr) + " received.")
+    # logging.info("Packet " + str(packet_nr) + " received.")
 
     if packet_nr >= rcv_base-window_size and packet_nr <= rcv_base+window_size-1:
         # Resend packet.
-        logging.info("Sent ACK for packet: " + str(packet_nr) + ".")
+        # logging.info("Sent ACK for packet: " + str(packet_nr) + ".")
         serverSocket.sendto(packet_nr.to_bytes(2, 'big'), clientAddress)
         chunks_dict[packet_nr] = chunk
     
@@ -66,14 +65,14 @@ while(True):
     # If all packages have been received, send a few ACKs for max_packet_nr+1.
     # For the sender, this signal means that all packets have been received.
     if len(chunks_dict) == max_packet_nr+1:
-        logging.info("Sending termination ACKs.")
+        # logging.info("Sending termination ACKs.")
         max_packet_nr += 1
         for ii in range(resend_last_packet_n_times):
             serverSocket.sendto(max_packet_nr.to_bytes(2, 'big'), clientAddress)
         break
     
-logging.info("Reconstructing file.")
+# logging.info("Reconstructing file.")
 with open(fileName, 'wb') as f:
     for ii in range(max_packet_nr):
         f.write(chunks_dict[ii])
-logging.info("File saved.")
+# logging.info("File saved.")
