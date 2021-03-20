@@ -10,12 +10,12 @@ from ryu.lib.packet import ipv4
 from ryu.lib.packet import tcp
 from ryu.lib.packet.ether_types import ETH_TYPE_IP
 
-class L4State14(app_manager.RyuApp):
+class L4Mirror14(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_4.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        super(L4State14, self).__init__(*args, **kwargs)
-        self.ht = set()
+        super(L4Mirror14, self).__init__(*args, **kwargs)
+        self.ht = {}
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def features_handler(self, ev):
@@ -39,57 +39,73 @@ class L4State14(app_manager.RyuApp):
         dp = msg.datapath
         ofp, psr, did = (dp.ofproto, dp.ofproto_parser, format(dp.id, '016d'))
         eth = pkt.get_protocols(ethernet.ethernet)[0]
+        iph = pkt.get_protocols(ipv4.ipv4)
+        tcph = pkt.get_protocols(tcp.tcp)
 
-        tcp_pkt = pkt.get_protocols(tcp.tcp)
-        ip_pkt = pkt.get_protocols(ipv4.ipv4)
+        out_port = 2 if in_port == 1 else 1
         # Check if the packet contains a TCP-over-IPV4 packet.
-        if tcp_pkt == [] or ip_pkt == []:
+        if tcph == [] or iph == []:
             # Negative -> forward the packet to the correct output port.
-            if in_port == 1:
-                out_port = 2
-            else:
-                out_port = 1
             acts = [psr.OFPActionOutput(out_port)]
         else:
             # Affirmative -> extract the TCP flow the packet belongs to.
-            src_ip = ip_pkt[0].src
-            dst_ip = ip_pkt[0].dst
-            src_port = tcp_pkt[0].src_port
-            dst_port = tcp_pkt[0].dst_port
+            src_ip = iph[0].src
+            dst_ip = iph[0].dst
+            src_port = tcph[0].src_port
+            dst_port = tcph[0].dst_port
 
             # Check if the packet was received on port 1 (the internal port) or on port 2 (the extrenal port).
             if in_port == 1:
-                # TCP flow:
-                tcp_flow_key = (src_ip, dst_ip, src_port, dst_port)
+                # Add flow unconditionally to the switch.
+
                 # Action: forward it to port 2.
                 acts = [psr.OFPActionOutput(2)]
-                if tcp_flow_key not in self.ht:
-                    # Add flow to ht.
-                    self.ht.add(tcp_flow_key)
-                    # Add flow to switch's table.
-                    mtc = psr.OFPMatch(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip,
-                                       tcp_src=src_port, tcp_dst=dst_port, eth_type=eth.ethertype)
-                    self.add_flow(dp, 1, mtc, acts, msg.buffer_id)
-                    if msg.buffer_id != ofp.OFP_NO_BUFFER:
-                        return
+                # Add flow to switch's table.
+                mtc = psr.OFPMatch(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip,
+                                    tcp_src=src_port, tcp_dst=dst_port, eth_type=eth.ethertype)
+                self.add_flow(dp, 1, mtc, acts, msg.buffer_id)
+                if msg.buffer_id != ofp.OFP_NO_BUFFER:
+                    return
             else:
                 # Packet was received on port 2.
-                tcp_flow_key = (dst_ip, src_ip, dst_port, src_port)
-                if tcp_flow_key not in self.ht:
-                    # Packet does not match any flow in self.ht -> drop the packet.
-                    acts = [psr.OFPActionOutput(ofp.OFPPC_NO_FWD)]
+                # Check if the received packet has the SYN bit set to 1 and the ACK bit set to 0
+                # (which means that the connection is initiated externally.)
+                tcp_flow_key = (src_ip, dst_ip, src_port, dst_port)
+                if tcph[0].has_flags(tcp.TCP_SYN) and not tcph[0].has_flags(tcp.TCP_ACK):
+                    # Add the flow to the dictionary, with a count of 1 and forward the packet
+                    # to ports 3 and 1.
+                    self.ht[tcp_flow_key] = 1
+                    acts = [psr.OFPActionOutput(1), psr.OFPActionOutput(3)]
+                elif tcp_flow_key in self.ht:
+                    # If this is a flow we are monitoring, increment the number of packets received.
+                    self.ht[tcp_flow_key] += 1
+                    # Current action.
+                    acts = [psr.OFPActionOutput(1), psr.OFPActionOutput(3)]
+                    # Future action on encountering a packet from this flow from port 2.
+                    acts_from_now_on = [psr.OFPActionOutput(1)]
+                    if self.ht[tcp_flow_key] == 10:
+                        # Remove the flow entry from the dictionary.
+                        del self.ht[tcp_flow_key]
+                        # Add the flow to the switch's table.
+                        mtc = psr.OFPMatch(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip,
+                                           tcp_src=src_port, tcp_dst=dst_port, eth_type=eth.ethertype)
+                        self.add_flow(dp, 1, mtc, acts_from_now_on, msg.buffer_id)
+
+                        if msg.buffer_id != ofp.OFP_NO_BUFFER:
+                            return
                 else:
-                    # Packet matches an existing TCP flow.
-                    # Forward to port 1 and add to switch flow table (not ht).
+                    # This is part of a flow we are NOT monitoring (e.g: initiated by the internal host).
+                    # Forward this packet to port 1.
                     acts = [psr.OFPActionOutput(1)]
-                    # Add to switch flow table:
+                    
+                    # Add the flow to the switch's table.
                     mtc = psr.OFPMatch(in_port=in_port, ipv4_src=src_ip, ipv4_dst=dst_ip,
                                        tcp_src=src_port, tcp_dst=dst_port, eth_type=eth.ethertype)
                     self.add_flow(dp, 1, mtc, acts, msg.buffer_id)
 
                     if msg.buffer_id != ofp.OFP_NO_BUFFER:
                         return
-        
+
         data = msg.data if msg.buffer_id == ofp.OFP_NO_BUFFER else None
         out = psr.OFPPacketOut(datapath=dp, buffer_id=msg.buffer_id,
                                in_port=in_port, actions=acts, data=data)
